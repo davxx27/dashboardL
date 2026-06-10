@@ -20,6 +20,14 @@ Open any `.html` file directly in your browser — no build step, no install.
 | [finance.html](finance.html) | Finances |
 | [gym.html](gym.html) | Progressive overload gym tracker |
 | [topbar.js](topbar.js) | Shared top bar — auto-injected into pages that `<script src="topbar.js">` |
+| [vitals.html](vitals.html) | Sleep, HRV, recovery, resting HR, steps, mood & energy check-in |
+| [nutrition.html](nutrition.html) | Calories & macros, adherence %, body-weight trend coach |
+| [body.html](body.html) | Body composition, measurements & progress photos |
+| [performance.html](performance.html) | Deep work / english / business / social time + personal brand |
+| [reflection.html](reflection.html) | Daily journal (what worked / what didn't / free) |
+| [analytics.html](analytics.html) | Cross-module trends, correlations & consistency heatmaps |
+| [theme.css](theme.css) + [ui.js](ui.js) | Shared design system & helpers for the new pages |
+| [sync.js](sync.js) | Private cross-device sync (Supabase Auth + RLS) |
 
 Each app stores its own state in browser `localStorage`. No accounts, no server.
 

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<meta name="color-scheme" content="dark">
+<title>Locked In — Analytics</title>
+<script src="topbar.js" defer></script>
+<link rel="stylesheet" href="theme.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="sync.js" defer></script>
+<script src="ui.js"></script>
+<style>
+.corr-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 12px;
+  align-items: center;
+  padding: 11px 14px; border-radius: 10px;
+  background: var(--bg-secondary); border: 1px solid var(--border-soft);
+  margin-bottom: 6px;
+}
+.corr-pair { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.corr-note { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+.corr-r {
+  font-family: var(--font-mono); font-size: 14px; font-weight: 700;
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.corr-bar { height: 4px; border-radius: 99px; background: rgba(255,255,255,0.05); margin-top: 5px; overflow: hidden; width: 90px; }
+.corr-bar div { height: 100%; border-radius: 99px; }
+.cmp-table { width: 100%; border-collapse: collapse; }
+.cmp-table th {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-tertiary);
+  text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border-soft);
+}
+.cmp-table th:first-child { text-align: left; }
+.cmp-table td {
+  font-family: var(--font-mono); font-size: 12.5px;
+  color: var(--text-secondary); font-variant-numeric: tabular-nums;
+  text-align: right; padding: 8px; border-bottom: 1px solid var(--border-soft);
+}
+.cmp-table td:first-child { text-align: left; font-family: var(--font); font-weight: 600; color: var(--text-primary); }
+.cmp-table tr:last-child td { border-bottom: none; }
+.heat-block { margin-bottom: 18px; }
+.heat-label {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-tertiary);
+  margin-bottom: 8px; display: flex; align-items: center; gap: 7px;
+}
+.compare-selects { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.compare-selects select { max-width: 200px; }
+.vs { font-family: var(--font-mono); font-size: 11px; color: var(--text-quaternary); font-weight: 700; }
+.legend { display: flex; gap: 14px; margin-top: 8px; }
+.legend span { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+</style>
+</head>
+<body>
+
+<main>
+  <h1 class="dash-title">Analytics</h1>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+    <div class="card-sub" style="margin:0">Datos cruzados de todos los módulos · analytics &gt; scores</div>
+    <div class="seg" id="rangeSeg">
+      <button data-d="30" class="is-active">30D</button>
+      <button data-d="90">90D</button>
+    </div>
+  </div>
+
+  <!-- ====== Resumen semanal ====== -->
+  <div class="section-title">Esta semana vs anterior</div>
+  <div class="card">
+    <table class="cmp-table">
+      <thead><tr><th>Métrica</th><th>7 días</th><th>Previos</th><th>Δ</th></tr></thead>
+      <tbody id="cmpBody"></tbody>
+    </table>
+  </div>
+
+  <!-- ====== Comparador de métricas ====== -->
+  <div class="section-title">Comparar dos métricas</div>
+  <div class="card">
+    <div class="compare-selects">
+      <select class="input" id="selA"></select>
+      <span class="vs">VS</span>
+      <select class="input" id="selB"></select>
+    </div>
+    <div class="chart-wrap" id="cmpChart"></div>
+    <div class="legend" id="cmpLegend"></div>
+    <div class="card-sub" id="cmpCorr" style="margin-top:10px">—</div>
+  </div>
+
+  <!-- ====== Correlaciones automáticas ====== -->
+  <div class="section-title">Correlaciones detectadas</div>
+  <div class="card">
+    <div class="card-sub" style="margin-top:0;margin-bottom:12px">Pares con relación más fuerte en el periodo (mín. 5 días con ambos datos). Correlación ≠ causalidad.</div>
+    <div id="corrList"></div>
+  </div>
+
+  <!-- ====== Heatmaps de consistencia ====== -->
+  <div class="section-title">Consistencia · 12 semanas</div>
+  <div class="card">
+    <div class="heat-block">
+      <div class="heat-label"><span style="width:8px;height:8px;border-radius:50%;background:#6BE3A4;display:inline-block"></span>Goals completados</div>
+      <div id="heatGoals"></div>
+    </div>
+    <div class="heat-block">
+      <div class="heat-label"><span style="width:8px;height:8px;border-radius:50%;background:#E07658;display:inline-block"></span>Deep work</div>
+      <div id="heatDW"></div>
+    </div>
+    <div class="heat-block" style="margin-bottom:0">
+      <div class="heat-label"><span style="width:8px;height:8px;border-radius:50%;background:#B5A1F2;display:inline-block"></span>Journal</div>
+      <div id="heatJournal"></div>
+    </div>
+  </div>
+
+  <div class="attribution">Locked In · Analytics</div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  const L = window.LIM;
+  const $ = (id) => document.getElementById(id);
+  let range = 30;
+
+  /* ---------- Registro de métricas de todos los módulos ---------- */
+  function nsMap(ns, type) {
+    const doc = L.storeGet('lim_' + ns + '_v1', {}) || {};
+    return doc[type] || {};
+  }
+  function goalsPct(k) {
+    const g = L.storeGet('goals:' + k, null);
+    if (!Array.isArray(g) || !g.length) return null;
+    return Math.round((g.filter((x) => x && x.done).length / g.length) * 100);
+  }
+  function journalDone(k) {
+    const d = L.storeGet('lim_journal_v1', {}) || {};
+    return d[k] ? 1 : null;
+  }
+
+  const METRICS = [
+    { id: 'sleep',     name: 'Sueño (h)',        color: '#B5A1F2', get: (k) => val(nsMap('vitals', 'sleep')[k]),     dec: 1, goodWhenUp: true },
+    { id: 'hrv',       name: 'HRV (ms)',         color: '#7DD3FC', get: (k) => val(nsMap('vitals', 'hrv')[k]),       dec: 0, goodWhenUp: true },
+    { id: 'recovery',  name: 'Recuperación (%)', color: '#6BE3A4', get: (k) => val(nsMap('vitals', 'recovery')[k]),  dec: 0, goodWhenUp: true },
+    { id: 'rhr',       name: 'FC reposo (bpm)',  color: '#FF6B6B', get: (k) => val(nsMap('vitals', 'rhr')[k]),       dec: 0, goodWhenUp: false },
+    { id: 'steps',     name: 'Pasos',            color: '#E07658', get: (k) => val(nsMap('vitals', 'steps')[k]),     dec: 0, goodWhenUp: true },
+    { id: 'energy',    name: 'Energía (0-100)',  color: '#E07658', get: (k) => val(nsMap('vitals', 'energy')[k]),    dec: 0, goodWhenUp: true },
+    { id: 'mood',      name: 'Ánimo (0-100)',    color: '#F2C063', get: (k) => val(nsMap('vitals', 'mood')[k]),      dec: 0, goodWhenUp: true },
+    { id: 'caffeine',  name: 'Cafeína (mg)',     color: '#F2C063', get: (k) => val(nsMap('vitals', 'caffeine')[k]),  dec: 0, goodWhenUp: false },
+    { id: 'deep_work', name: 'Deep work (min)',  color: '#E07658', get: (k) => val(nsMap('perf', 'deep_work')[k]),   dec: 0, goodWhenUp: true },
+    { id: 'social',    name: 'Redes (min)',      color: '#FF6B6B', get: (k) => val(nsMap('perf', 'social')[k]),      dec: 0, goodWhenUp: false },
+    { id: 'calories',  name: 'Calorías',         color: '#E07658', get: (k) => val(nsMap('nut', 'calories')[k]),     dec: 0 },
+    { id: 'protein',   name: 'Proteína (g)',     color: '#6BE3A4', get: (k) => val(nsMap('nut', 'protein')[k]),      dec: 0, goodWhenUp: true },
+    { id: 'weight',    name: 'Peso (kg)',        color: '#7DD3FC', get: (k) => val(nsMap('nut', 'weight')[k]),       dec: 1 },
+    { id: 'goals',     name: 'Goals (%)',        color: '#6BE3A4', get: goalsPct,                                    dec: 0, goodWhenUp: true },
+    { id: 'followers', name: 'Seguidores',       color: '#B5A1F2', get: (k) => val(nsMap('brand', 'followers')[k]),  dec: 0, goodWhenUp: true },
+  ];
+  function val(v) { return v == null ? null : Number(v); }
+
+  function seriesOf(m, days) {
+    return L.lastNDates(days).map((k) => ({ date: k, value: m.get(k) }));
+  }
+
+  /* ---------- Pearson ---------- */
+  function pearson(a, b) {
+    // a, b: series alineadas por fecha; usa solo días con ambos valores
+    const xs = [], ys = [];
+    a.forEach((p, i) => {
+      if (p.value != null && b[i].value != null) { xs.push(p.value); ys.push(b[i].value); }
+    });
+    const n = xs.length;
+    if (n < 5) return { r: null, n };
+    const mx = xs.reduce((s, v) => s + v, 0) / n;
+    const my = ys.reduce((s, v) => s + v, 0) / n;
+    let num = 0, dx = 0, dy = 0;
+    for (let i = 0; i < n; i++) {
+      num += (xs[i] - mx) * (ys[i] - my);
+      dx += (xs[i] - mx) ** 2;
+      dy += (ys[i] - my) ** 2;
+    }
+    if (dx === 0 || dy === 0) return { r: null, n };
+    return { r: num / Math.sqrt(dx * dy), n };
+  }
+  function rLabel(r) {
+    const a = Math.abs(r);
+    if (a >= 0.7) return 'fuerte';
+    if (a >= 0.4) return 'moderada';
+    return 'débil';
+  }
+  function rColor(r) { return r > 0 ? '#6BE3A4' : '#FF6B6B'; }
+
+  /* ---------- Gráfico doble normalizado ---------- */
+  let uid = 0;
+  function dualChart(el, sA, sB, cA, cB) {
+    const W = Math.max(el.clientWidth || 600, 200), H = 170;
+    const padL = 6, padR = 6, padT = 12, padB = 18;
+    function norm(s) {
+      const pts = s.filter((p) => p.value != null);
+      if (pts.length < 2) return null;
+      let min = Math.min(...pts.map((p) => p.value));
+      let max = Math.max(...pts.map((p) => p.value));
+      if (min === max) { min -= 1; max += 1; }
+      return s.map((p) => (p.value == null ? null : (p.value - min) / (max - min)));
+    }
+    const nA = norm(sA), nB = norm(sB);
+    if (!nA || !nB) {
+      el.innerHTML = '<div class="chart-empty">Faltan datos en alguna de las dos métricas — registra unos días más</div>';
+      return false;
+    }
+    const xs = sA.map((_, i) => padL + (i / (sA.length - 1)) * (W - padL - padR));
+    const y = (v) => padT + (1 - v) * (H - padT - padB);
+    function path(nv) {
+      let d = '', started = false;
+      nv.forEach((v, i) => {
+        if (v == null) return;
+        d += (started ? 'L' : 'M') + xs[i].toFixed(1) + ',' + y(v).toFixed(1);
+        started = true;
+      });
+      return d;
+    }
+    const id = 'dual' + (++uid);
+    el.innerHTML = `
+<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block">
+  <defs><filter id="${id}" x="-20%" y="-50%" width="140%" height="200%">
+    <feGaussianBlur stdDeviation="2" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter></defs>
+  <text x="${padL}" y="${H - 5}" class="chart-axis-label">${L.fmtShort(sA[0].date)}</text>
+  <text x="${W - padR}" y="${H - 5}" text-anchor="end" class="chart-axis-label">${L.fmtShort(sA[sA.length - 1].date)}</text>
+  <path d="${path(nA)}" fill="none" stroke="${cA}" stroke-width="2" stroke-linejoin="round" filter="url(#${id})"/>
+  <path d="${path(nB)}" fill="none" stroke="${cB}" stroke-width="2" stroke-linejoin="round" stroke-dasharray="5 4" filter="url(#${id})"/>
+</svg>`;
+    return true;
+  }
+
+  /* ---------- Render ---------- */
+  document.addEventListener('DOMContentLoaded', () => {
+    // selects del comparador
+    const opts = METRICS.map((m) => `<option value="${m.id}">${m.name}</option>`).join('');
+    $('selA').innerHTML = opts;
+    $('selB').innerHTML = opts;
+    $('selA').value = 'sleep';
+    $('selB').value = 'energy';
+    $('selA').addEventListener('change', render);
+    $('selB').addEventListener('change', render);
+    $('rangeSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      range = parseInt(b.dataset.d, 10);
+      document.querySelectorAll('#rangeSeg button').forEach((x) => x.classList.toggle('is-active', x === b));
+      render();
+    });
+    render();
+    window.addEventListener('resize', render);
+  });
+
+  function fmtV(v, m) {
+    if (v == null) return '—';
+    const n = m.dec ? v.toFixed(m.dec) : Math.round(v);
+    return ['steps', 'followers', 'calories'].includes(m.id) ? Number(n).toLocaleString('es') : String(n);
+  }
+
+  function render() {
+    /* --- tabla semana vs semana --- */
+    const KEY_METRICS = ['sleep', 'recovery', 'energy', 'deep_work', 'steps', 'calories', 'protein', 'weight', 'goals'];
+    $('cmpBody').innerHTML = KEY_METRICS.map((id) => {
+      const m = METRICS.find((x) => x.id === id);
+      const cur = L.metricAvg(seriesOf(m, 7));
+      const prev = L.metricAvg(seriesOf(m, 14).slice(0, 7));
+      if (cur == null && prev == null) return '';
+      return `<tr>
+        <td>${m.name}</td>
+        <td>${fmtV(cur, m)}</td>
+        <td>${fmtV(prev, m)}</td>
+        <td>${L.deltaHTML(cur, prev, { goodWhenUp: m.goodWhenUp })}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="4" class="empty-state">Aún no hay datos — empieza a registrar en los demás módulos.</td></tr>';
+
+    /* --- comparador --- */
+    const mA = METRICS.find((x) => x.id === $('selA').value);
+    const mB = METRICS.find((x) => x.id === $('selB').value);
+    const sA = seriesOf(mA, range);
+    const sB = seriesOf(mB, range);
+    const ok = dualChart($('cmpChart'), sA, sB, mA.color, mB.color);
+    $('cmpLegend').innerHTML = ok
+      ? `<span><i style="background:${mA.color}"></i>${mA.name}</span>
+         <span><i style="background:${mB.color};background-image:repeating-linear-gradient(90deg,${mB.color} 0 5px,transparent 5px 9px)"></i>${mB.name}</span>
+         <span style="opacity:0.6">· normalizado 0-1 para comparar forma</span>`
+      : '';
+    const { r, n } = pearson(sA, sB);
+    $('cmpCorr').innerHTML = r == null
+      ? `Se necesitan al menos 5 días con ambas métricas (ahora: ${n}).`
+      : `Correlación: <b style="color:${rColor(r)}">r = ${r.toFixed(2)}</b> (${rLabel(r)} ${r > 0 ? 'positiva' : 'negativa'}, ${n} días) · correlación ≠ causalidad`;
+
+    /* --- correlaciones automáticas --- */
+    const PAIRS = [
+      ['sleep', 'energy'], ['sleep', 'mood'], ['sleep', 'recovery'], ['sleep', 'hrv'],
+      ['recovery', 'deep_work'], ['energy', 'deep_work'], ['mood', 'deep_work'],
+      ['caffeine', 'sleep'], ['social', 'mood'], ['social', 'deep_work'],
+      ['steps', 'energy'], ['steps', 'mood'], ['protein', 'recovery'],
+      ['calories', 'weight'], ['deep_work', 'goals'], ['energy', 'goals'],
+      ['hrv', 'recovery'], ['rhr', 'recovery'], ['sleep', 'goals'],
+    ];
+    const found = [];
+    PAIRS.forEach(([a, b]) => {
+      const ma = METRICS.find((x) => x.id === a);
+      const mb = METRICS.find((x) => x.id === b);
+      const { r, n } = pearson(seriesOf(ma, range), seriesOf(mb, range));
+      if (r != null && Math.abs(r) >= 0.3) found.push({ ma, mb, r, n });
+    });
+    found.sort((x, y) => Math.abs(y.r) - Math.abs(x.r));
+    $('corrList').innerHTML = found.length
+      ? found.slice(0, 8).map((f) => `
+        <div class="corr-row">
+          <div>
+            <div class="corr-pair">${f.ma.name} ↔ ${f.mb.name}</div>
+            <div class="corr-note">${rLabel(f.r)} ${f.r > 0 ? 'positiva' : 'negativa'} · ${f.n} días</div>
+          </div>
+          <div>
+            <div class="corr-r" style="color:${rColor(f.r)}">${f.r > 0 ? '+' : ''}${f.r.toFixed(2)}</div>
+            <div class="corr-bar"><div style="width:${(Math.abs(f.r) * 100).toFixed(0)}%;background:${rColor(f.r)}"></div></div>
+          </div>
+        </div>`).join('')
+      : '<div class="empty-state">Aún no hay correlaciones con suficientes datos — registra varias métricas durante 1-2 semanas y aquí aparecerá lo que mueve tu rendimiento.</div>';
+
+    /* --- heatmaps --- */
+    L.heatmap($('heatGoals'), 84, goalsPct, { color: '107, 227, 164' });
+    const dw = nsMap('perf', 'deep_work');
+    L.heatmap($('heatDW'), 84, (k) => (dw[k] ? Number(dw[k]) : null), { color: '224, 118, 88' });
+    L.heatmap($('heatJournal'), 84, journalDone, { color: '181, 161, 242' });
+  }
+})();
+</script>
+</body>
+</html>

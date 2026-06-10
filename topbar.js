@@ -109,12 +109,62 @@
   background: linear-gradient(180deg, rgba(125, 211, 252, 0.65), rgba(110, 231, 183, 0.65));
 }
 
+.topbar-more-wrap { position: relative; flex: 0 0 auto; display: flex; }
+.topbar-more {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px;
+  padding: 8px 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 11px;
+  color: #FAFAFA;
+  cursor: pointer;
+  font-family: inherit; font-size: 15px; font-weight: 700;
+  letter-spacing: 0.05em;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.topbar-more:hover { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.10); }
+.topbar-more.is-open { background: rgba(255, 255, 255, 0.09); }
+.topbar-menu {
+  position: absolute;
+  top: calc(100% + 8px); right: 0;
+  min-width: 200px;
+  background: rgba(15, 15, 18, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 6px;
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+  z-index: 60;
+}
+.topbar-menu[hidden] { display: none; }
+.topbar-menu a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  text-decoration: none;
+  color: #FAFAFA;
+  font-size: 13px; font-weight: 600;
+  transition: background 0.12s;
+}
+.topbar-menu a:hover { background: rgba(255, 255, 255, 0.06); }
+.topbar-menu a .mi { width: 20px; text-align: center; font-size: 14px; }
+.topbar-menu a.is-current { background: rgba(224, 118, 88, 0.12); }
+.topbar-menu-sep {
+  height: 1px; margin: 5px 8px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
 @media (max-width: 480px) {
   .topbar { padding-left: 10px; padding-right: 10px; gap: 4px; }
   .topbar-pill, .topbar-water-pill { padding: 7px 9px; gap: 5px; }
   .topbar-pill-label { font-size: 9px; letter-spacing: 0.10em; }
   .topbar-pill-count { font-size: 11px; }
   .topbar-water-add { width: 32px; font-size: 16px; }
+  .topbar-more { width: 34px; padding: 7px 0; font-size: 14px; }
 }
 @media (max-width: 380px) {
   .topbar-pill-label { display: none; }
@@ -195,6 +245,18 @@ body.topbar-modal-open {
     <span class="topbar-pill-dot"></span>
     <span class="topbar-pill-label">FINANCE</span>
   </a>
+  <div class="topbar-more-wrap">
+    <button class="topbar-more" id="topbarMore" type="button" aria-label="More pages" aria-expanded="false">⋯</button>
+    <nav class="topbar-menu" id="topbarMenu" hidden>
+      <a href="vitals.html"><span class="mi">❤️</span>Vitals</a>
+      <a href="nutrition.html"><span class="mi">🍎</span>Nutrition</a>
+      <a href="body.html"><span class="mi">📐</span>Body</a>
+      <a href="performance.html"><span class="mi">🎯</span>Performance</a>
+      <a href="reflection.html"><span class="mi">📓</span>Reflection</a>
+      <div class="topbar-menu-sep"></div>
+      <a href="analytics.html"><span class="mi">📈</span>Analytics</a>
+    </nav>
+  </div>
 </header>
 `;
 
@@ -408,11 +470,40 @@ body.topbar-modal-open {
     sync();
   }
 
+  // -------- "More" menu --------
+  function wireMoreMenu() {
+    const btn = document.getElementById('topbarMore');
+    const menu = document.getElementById('topbarMenu');
+    if (!btn || !menu) return;
+    // marca la página actual
+    const path = window.location.pathname.split('/').pop() || 'index.html';
+    menu.querySelectorAll('a').forEach((a) => {
+      if (a.getAttribute('href') === path) a.classList.add('is-current');
+    });
+    function close() {
+      menu.hidden = true;
+      btn.classList.remove('is-open');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = menu.hidden;
+      menu.hidden = !open;
+      btn.classList.toggle('is-open', open);
+      btn.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', (e) => {
+      if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) close();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  }
+
   // -------- Boot --------
   function boot() {
     injectStyleAndHTML();
     const btn = document.getElementById('topbarWaterAdd');
     if (btn) btn.addEventListener('click', (e) => { e.preventDefault(); addWater(); });
+    wireMoreMenu();
     render();
     lockGestures();
     startModalLock();

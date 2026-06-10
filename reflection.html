@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<meta name="color-scheme" content="dark">
+<title>Locked In — Reflection</title>
+<script src="topbar.js" defer></script>
+<link rel="stylesheet" href="theme.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="sync.js" defer></script>
+<script src="ui.js"></script>
+<style>
+.j-field { margin-bottom: 14px; }
+.j-label {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  margin-bottom: 6px; display: flex; align-items: center; gap: 7px;
+}
+.j-label.ok { color: var(--success); }
+.j-label.bad { color: var(--danger); }
+.j-label.free { color: var(--text-tertiary); }
+.j-save-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.j-status { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+.streak-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 12px; border-radius: 99px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-soft);
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+.streak-pill.active {
+  background: rgba(242,192,99,0.10);
+  border-color: rgba(242,192,99,0.32);
+  color: var(--warning);
+}
+.streak-pill .n { font-family: var(--font-mono); font-weight: 700; font-variant-numeric: tabular-nums; }
+.hist-entry {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.hist-date {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-tertiary); margin-bottom: 8px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.hist-block { margin-bottom: 8px; }
+.hist-block:last-child { margin-bottom: 0; }
+.hist-k {
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  margin-bottom: 2px;
+}
+.hist-k.ok { color: var(--success); }
+.hist-k.bad { color: var(--danger); }
+.hist-k.free { color: var(--text-tertiary); }
+.hist-v { font-size: 13.5px; color: var(--text-secondary); white-space: pre-wrap; }
+.hist-more { text-align: center; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<main>
+  <h1 class="dash-title">Reflection</h1>
+
+  <div class="section-title">Journal de hoy</div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+      <div>
+        <div class="card-eyebrow" id="todayLabel">Hoy</div>
+        <div class="card-title">¿Cómo fue el día?</div>
+      </div>
+      <div class="streak-pill" id="streakPill">🔥 <span class="n" id="streakNum">0</span> días seguidos</div>
+    </div>
+
+    <div style="margin-top:16px">
+      <div class="j-field">
+        <div class="j-label ok">✓ Qué funcionó</div>
+        <textarea class="input" id="jWorked" placeholder="Lo que salió bien hoy…"></textarea>
+      </div>
+      <div class="j-field">
+        <div class="j-label bad">✗ Qué no funcionó</div>
+        <textarea class="input" id="jDidnt" placeholder="Lo que se puede mejorar…"></textarea>
+      </div>
+      <div class="j-field">
+        <div class="j-label free">∞ Reflexión libre</div>
+        <textarea class="input" id="jFree" placeholder="Pensamientos, ideas, lo que sea…" style="min-height:96px"></textarea>
+      </div>
+      <div class="j-save-row">
+        <button class="btn-primary" id="jSave">Guardar</button>
+        <span class="j-status" id="jStatus"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">Consistencia</div>
+  <div class="card">
+    <div id="jHeat"></div>
+    <div class="card-sub" style="margin-top:10px">Últimas 12 semanas · un cuadro = un día con journal</div>
+  </div>
+
+  <div class="section-title">Histórico</div>
+  <div class="card" id="histCard">
+    <div id="histList"></div>
+    <div class="hist-more"><button class="btn-ghost" id="histMore" hidden>Ver más</button></div>
+  </div>
+
+  <div class="attribution">Locked In · Reflection</div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  const L = window.LIM;
+  const KEY = 'lim_journal_v1';
+  const $ = (id) => document.getElementById(id);
+  let visible = 7;
+
+  function doc() { return L.storeGet(KEY, {}) || {}; }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const today = L.activeDateKey();
+    $('todayLabel').textContent = 'Hoy — ' + L.fmtLong(today);
+
+    // precarga lo de hoy si ya existe
+    const t = doc()[today];
+    if (t) {
+      $('jWorked').value = t.worked || '';
+      $('jDidnt').value = t.didnt || '';
+      $('jFree').value = t.free || '';
+    }
+
+    $('jSave').addEventListener('click', save);
+    $('histMore').addEventListener('click', () => { visible += 7; renderHist(); });
+
+    render();
+  });
+
+  function save() {
+    const today = L.activeDateKey();
+    const d = doc();
+    const entry = {
+      worked: $('jWorked').value.trim(),
+      didnt: $('jDidnt').value.trim(),
+      free: $('jFree').value.trim(),
+      at: Date.now(),
+    };
+    if (!entry.worked && !entry.didnt && !entry.free) {
+      $('jStatus').textContent = 'Escribe algo primero.';
+      setTimeout(() => { $('jStatus').textContent = ''; }, 2500);
+      return;
+    }
+    d[today] = entry;
+    L.storeSet(KEY, d);
+    $('jStatus').textContent = 'Guardado ✓';
+    setTimeout(() => { $('jStatus').textContent = ''; }, 2500);
+    render();
+  }
+
+  function computeStreak() {
+    const d = doc();
+    let streak = 0;
+    let k = L.activeDateKey();
+    // si hoy no está escrito aún, la racha cuenta desde ayer
+    if (!d[k]) {
+      const dt = new Date(k + 'T12:00:00'); dt.setDate(dt.getDate() - 1);
+      k = dt.toISOString().slice(0, 10);
+    }
+    while (d[k]) {
+      streak++;
+      const dt = new Date(k + 'T12:00:00'); dt.setDate(dt.getDate() - 1);
+      k = dt.toISOString().slice(0, 10);
+    }
+    return streak;
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function renderHist() {
+    const d = doc();
+    const keys = Object.keys(d).sort().reverse();
+    if (!keys.length) {
+      $('histList').innerHTML = '<div class="empty-state">Aún no hay entradas — escribe tu primera reflexión arriba.</div>';
+      $('histMore').hidden = true;
+      return;
+    }
+    const shown = keys.slice(0, visible);
+    $('histList').innerHTML = shown.map((k) => {
+      const e = d[k];
+      let blocks = '';
+      if (e.worked) blocks += `<div class="hist-block"><div class="hist-k ok">✓ funcionó</div><div class="hist-v">${esc(e.worked)}</div></div>`;
+      if (e.didnt) blocks += `<div class="hist-block"><div class="hist-k bad">✗ no funcionó</div><div class="hist-v">${esc(e.didnt)}</div></div>`;
+      if (e.free) blocks += `<div class="hist-block"><div class="hist-k free">∞ libre</div><div class="hist-v">${esc(e.free)}</div></div>`;
+      return `<div class="hist-entry"><div class="hist-date">${L.fmtLong(k)}</div>${blocks}</div>`;
+    }).join('');
+    $('histMore').hidden = keys.length <= visible;
+  }
+
+  function render() {
+    const streak = computeStreak();
+    $('streakNum').textContent = streak;
+    $('streakPill').classList.toggle('active', streak > 0);
+    const d = doc();
+    L.heatmap($('jHeat'), 84, (k) => (d[k] ? 1 : null), { color: '181, 161, 242' });
+    renderHist();
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<meta name="color-scheme" content="dark">
+<title>Locked In — Performance</title>
+<script src="topbar.js" defer></script>
+<link rel="stylesheet" href="theme.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="sync.js" defer></script>
+<script src="ui.js"></script>
+<style>
+/* Botones de categoría del registrador */
+.cat-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.cat-btn {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 7px 12px; border-radius: 99px;
+  border: 1px solid var(--border-strong);
+  background: transparent; color: var(--text-tertiary);
+  cursor: pointer; transition: all 0.15s;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.cat-btn .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.85; }
+.cat-btn:hover { color: var(--text-primary); }
+.cat-btn.is-active { color: var(--text-primary); background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.25); }
+.log-row { display: flex; gap: 6px; align-items: center; }
+.log-row .input { max-width: 130px; }
+.quick-mins { display: flex; gap: 5px; }
+.quick-mins button {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-secondary); color: var(--text-tertiary);
+  cursor: pointer; transition: all 0.12s;
+}
+.quick-mins button:hover { color: var(--text-primary); background: rgba(255,255,255,0.07); }
+.head-flex { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.brand-counters { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.brand-counter {
+  flex: 1; min-width: 130px;
+  background: var(--bg-secondary); border: 1px solid var(--border-soft);
+  border-radius: 12px; padding: 12px 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.brand-counter .v { font-size: 24px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.brand-counter .l { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-tertiary); }
+.bump {
+  width: 34px; height: 34px; border-radius: 10px;
+  border: 1px solid var(--border-strong); background: var(--bg-card);
+  color: var(--text-primary); font-size: 17px; font-weight: 700;
+  cursor: pointer; transition: all 0.12s; font-family: inherit;
+}
+.bump:hover { background: rgba(255,255,255,0.09); }
+.bump:active { transform: scale(0.92); }
+</style>
+</head>
+<body>
+
+<main>
+  <h1 class="dash-title">Performance</h1>
+
+  <!-- ====== Registro de hoy ====== -->
+  <div class="section-title">Tiempo de hoy</div>
+  <div class="card">
+    <div class="head-flex">
+      <div>
+        <div class="card-eyebrow" id="todayLabel">Hoy</div>
+        <div class="card-title">Registrar tiempo</div>
+        <div class="card-sub">solo datos · sin puntuaciones</div>
+      </div>
+      <div class="seg" id="rangeSeg">
+        <button data-d="7" class="is-active">7D</button>
+        <button data-d="30">30D</button>
+        <button data-d="90">90D</button>
+      </div>
+    </div>
+
+    <div style="margin-top:16px">
+      <div class="cat-row" id="catRow"></div>
+      <div class="log-row">
+        <input class="input input-mono" id="minsInput" type="number" min="1" step="5" placeholder="minutos" inputmode="numeric">
+        <div class="quick-mins">
+          <button data-m="15">+15</button>
+          <button data-m="30">+30</button>
+          <button data-m="60">+60</button>
+          <button data-m="90">+90</button>
+        </div>
+        <button class="btn-primary" id="logBtn">Registrar</button>
+      </div>
+    </div>
+
+    <div class="stat-grid" id="todayGrid" style="margin-top:16px"></div>
+  </div>
+
+  <!-- ====== Tendencia ====== -->
+  <div class="section-title">Tendencia</div>
+  <div class="card">
+    <div class="head-flex">
+      <div>
+        <div class="card-eyebrow" id="trendCat">Deep work</div>
+        <div class="big-num" id="trendAvg">— <span class="unit">min/día</span></div>
+        <div id="trendDelta" style="margin-top:4px"></div>
+      </div>
+    </div>
+    <div class="chart-wrap" id="trendChart" style="margin-top:14px"></div>
+  </div>
+
+  <!-- ====== Reparto semanal ====== -->
+  <div class="section-title">Reparto del periodo</div>
+  <div class="card">
+    <div id="splitBars"></div>
+  </div>
+
+  <!-- ====== Consistencia deep work ====== -->
+  <div class="section-title">Consistencia · deep work</div>
+  <div class="card">
+    <div id="dwHeat"></div>
+    <div class="card-sub" style="margin-top:10px">Últimas 12 semanas · más intenso = más minutos</div>
+  </div>
+
+  <!-- ====== Marca personal ====== -->
+  <div class="section-title">Marca personal</div>
+  <div class="card">
+    <div class="card-eyebrow">Hoy</div>
+    <div class="card-title">Contenido creado</div>
+    <div class="brand-counters">
+      <div class="brand-counter">
+        <div><div class="v" id="postsToday">0</div><div class="l">Posts</div></div>
+        <button class="bump" data-k="posts">+</button>
+      </div>
+      <div class="brand-counter">
+        <div><div class="v" id="videosToday">0</div><div class="l">Vídeos</div></div>
+        <button class="bump" data-k="videos">+</button>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <input class="input input-mono" id="followersInput" type="number" min="0" placeholder="seguidores hoy" inputmode="numeric">
+      <button class="btn-primary" id="followersBtn">Guardar</button>
+    </div>
+
+    <div style="margin-top:18px">
+      <div class="card-eyebrow">Seguidores</div>
+      <div class="big-num" id="followersNow">—</div>
+      <div id="followersDelta" style="margin-top:4px"></div>
+      <div class="chart-wrap" id="followersChart" style="margin-top:12px"></div>
+    </div>
+
+    <div class="stat-grid" id="brandGrid" style="margin-top:16px"></div>
+  </div>
+
+  <div class="attribution">Locked In · Performance</div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  const L = window.LIM;
+
+  const CATS = [
+    { id: 'deep_work', name: 'Deep work', color: '#E07658' },
+    { id: 'english',   name: 'Inglés',    color: '#7DD3FC' },
+    { id: 'business',  name: 'Empresa',   color: '#D8AB30' },
+    { id: 'social',    name: 'Redes',     color: '#FF6B6B' },
+    { id: 'brand_time',name: 'Marca',     color: '#B5A1F2' },
+  ];
+  let cat = L.storeGet('lim_perf_cat', 'deep_work') || 'deep_work';
+  let range = 7;
+
+  const $ = (id) => document.getElementById(id);
+
+  document.addEventListener('DOMContentLoaded', () => {
+    $('todayLabel').textContent = 'Hoy — ' + L.fmtLong(L.activeDateKey());
+
+    // categorías
+    $('catRow').innerHTML = CATS.map((c) =>
+      `<button class="cat-btn" data-c="${c.id}" style="--c:${c.color}"><span class="dot" style="background:${c.color}"></span>${c.name}</button>`
+    ).join('');
+    $('catRow').addEventListener('click', (e) => {
+      const b = e.target.closest('.cat-btn'); if (!b) return;
+      cat = b.dataset.c; L.storeSet('lim_perf_cat', cat); render();
+    });
+
+    // registrar minutos
+    $('logBtn').addEventListener('click', () => logMins(parseInt($('minsInput').value, 10)));
+    $('minsInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') logMins(parseInt($('minsInput').value, 10)); });
+    document.querySelector('.quick-mins').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      logMins(parseInt(b.dataset.m, 10));
+    });
+
+    // rango
+    $('rangeSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      range = parseInt(b.dataset.d, 10);
+      document.querySelectorAll('#rangeSeg button').forEach((x) => x.classList.toggle('is-active', x === b));
+      render();
+    });
+
+    // marca personal
+    document.querySelectorAll('.bump').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.k;
+      const cur = Number(L.metricGet('brand', k) || 0);
+      L.metricLog('brand', k, cur + 1);
+      render();
+    }));
+    $('followersBtn').addEventListener('click', saveFollowers);
+    $('followersInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveFollowers(); });
+
+    render();
+    window.addEventListener('resize', render);
+  });
+
+  function logMins(m) {
+    if (!m || m <= 0 || isNaN(m)) return;
+    const cur = Number(L.metricGet('perf', cat) || 0);
+    L.metricLog('perf', cat, cur + m);
+    $('minsInput').value = '';
+    render();
+  }
+
+  function saveFollowers() {
+    const v = parseInt($('followersInput').value, 10);
+    if (isNaN(v) || v < 0) return;
+    L.metricLog('brand', 'followers', v);
+    $('followersInput').value = '';
+    render();
+  }
+
+  function fmtMin(m) {
+    if (m == null) return '—';
+    if (m >= 60) return (m / 60).toFixed(1).replace(/\.0$/, '') + ' h';
+    return Math.round(m) + ' min';
+  }
+
+  function render() {
+    const c = CATS.find((x) => x.id === cat);
+    document.querySelectorAll('.cat-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.c === cat));
+
+    // hoy por categoría
+    $('todayGrid').innerHTML = CATS.map((x) => {
+      const v = Number(L.metricGet('perf', x.id) || 0);
+      return `<div class="stat-tile">
+        <div class="stat-tile-label"><span class="dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${x.color}"></span>${x.name}</div>
+        <div class="stat-tile-value">${fmtMin(v)}</div>
+      </div>`;
+    }).join('');
+
+    // tendencia de la categoría activa
+    const series = L.metricSeries('perf', cat, range);
+    const prev = L.metricSeries('perf', cat, range * 2).slice(0, range);
+    const avg = L.metricAvg(series);
+    const prevAvg = L.metricAvg(prev);
+    $('trendCat').textContent = c.name + ' · últimos ' + range + ' días';
+    $('trendAvg').innerHTML = (avg == null ? '—' : fmtMin(avg)) + ' <span class="unit">de media/día</span>';
+    $('trendDelta').innerHTML = L.deltaHTML(avg, prevAvg, { goodWhenUp: cat !== 'social' });
+    L.areaChart($('trendChart'), series, { color: c.color, height: 150 });
+
+    // reparto del periodo
+    const rows = CATS.map((x) => {
+      const s = L.metricSeries('perf', x.id, range);
+      const total = s.reduce((a, p) => a + (p.value || 0), 0);
+      return { name: x.name, value: total, label: fmtMin(total), color: x.color };
+    }).filter((r) => r.value > 0).sort((a, b) => b.value - a.value);
+    L.hbar($('splitBars'), rows);
+
+    // heatmap deep work (12 semanas)
+    const dw = (L.storeGet('lim_perf_v1', {}) || {}).deep_work || {};
+    L.heatmap($('dwHeat'), 84, (k) => (dw[k] ? Number(dw[k]) : null), { color: '224, 118, 88' });
+
+    // marca personal
+    $('postsToday').textContent = Number(L.metricGet('brand', 'posts') || 0);
+    $('videosToday').textContent = Number(L.metricGet('brand', 'videos') || 0);
+
+    const fl = L.metricLatest('brand', 'followers', 365);
+    $('followersNow').textContent = fl ? Number(fl.value).toLocaleString('es') : '—';
+    const fs = L.metricSeries('brand', 'followers', range);
+    const fPrev = L.metricSeries('brand', 'followers', range * 2).slice(0, range);
+    $('followersDelta').innerHTML = L.deltaHTML(L.metricAvg(fs), L.metricAvg(fPrev));
+    L.areaChart($('followersChart'), fs, { color: '#B5A1F2', height: 130 });
+
+    // totales del periodo (marca)
+    const posts = L.metricSeries('brand', 'posts', range).reduce((a, p) => a + (p.value || 0), 0);
+    const videos = L.metricSeries('brand', 'videos', range).reduce((a, p) => a + (p.value || 0), 0);
+    const bTime = L.metricSeries('perf', 'brand_time', range).reduce((a, p) => a + (p.value || 0), 0);
+    $('brandGrid').innerHTML = `
+      <div class="stat-tile"><div class="stat-tile-label">Posts · ${range}d</div><div class="stat-tile-value">${posts}</div></div>
+      <div class="stat-tile"><div class="stat-tile-label">Vídeos · ${range}d</div><div class="stat-tile-value">${videos}</div></div>
+      <div class="stat-tile"><div class="stat-tile-label">Tiempo marca · ${range}d</div><div class="stat-tile-value">${fmtMin(bTime)}</div></div>`;
+  }
+})();
+</script>
+</body>
+</html>

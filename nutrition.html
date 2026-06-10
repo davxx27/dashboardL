@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<meta name="color-scheme" content="dark">
+<title>Locked In — Nutrition</title>
+<script src="topbar.js" defer></script>
+<link rel="stylesheet" href="theme.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="sync.js" defer></script>
+<script src="ui.js"></script>
+<style>
+.macro-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 14px; }
+.macro-tile {
+  background: var(--bg-secondary); border: 1px solid var(--border-soft);
+  border-radius: 12px; padding: 12px 14px;
+}
+.macro-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.macro-name {
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.macro-val { font-size: 20px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.macro-val .t { font-size: 11px; color: var(--text-tertiary); font-weight: 600; }
+.macro-track { height: 5px; background: rgba(255,255,255,0.05); border-radius: 999px; overflow: hidden; }
+.macro-fill { height: 100%; border-radius: 999px; transition: width 0.5s cubic-bezier(0.22,1,0.36,1); }
+.macro-input-row { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 6px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-soft); }
+.macro-input-row .input { width: 100%; }
+@media (max-width: 600px) {
+  .macro-input-row { grid-template-columns: repeat(2, 1fr); }
+  .macro-input-row .btn-primary { grid-column: 1 / -1; }
+}
+.adh-flex { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.adh-ring { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
+.adh-ring .center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.adh-ring .center .p { font-size: 26px; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+.adh-ring .center .l { font-family: var(--font-mono); font-size: 8.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-tertiary); }
+.trend-msg {
+  margin-top: 12px; padding: 10px 14px; border-radius: 10px;
+  font-size: 12.5px; font-weight: 600;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border-soft);
+  color: var(--text-secondary);
+}
+.trend-msg.ok { background: rgba(107,227,164,0.08); border-color: rgba(107,227,164,0.25); color: var(--success); }
+.trend-msg.warn { background: rgba(242,192,99,0.08); border-color: rgba(242,192,99,0.28); color: var(--warning); }
+.trend-msg.bad { background: rgba(255,107,107,0.08); border-color: rgba(255,107,107,0.28); color: var(--danger); }
+.goal-row { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.targets-grid { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 6px; align-items: end; }
+.targets-grid label {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-tertiary);
+  display: block; margin-bottom: 4px;
+}
+@media (max-width: 600px) {
+  .targets-grid { grid-template-columns: repeat(2, 1fr); }
+  .targets-grid .btn-ghost { grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+
+<main>
+  <h1 class="dash-title">Nutrition</h1>
+
+  <!-- ====== Hoy ====== -->
+  <div class="section-title">Hoy</div>
+  <div class="card">
+    <div class="card-eyebrow" id="todayLabel">Hoy</div>
+    <div class="card-title">Calorías y macros</div>
+    <div class="card-sub">totales del día · sin registrar alimentos</div>
+
+    <div class="macro-grid" id="macroGrid"></div>
+
+    <div class="macro-input-row">
+      <input class="input input-mono" id="inKcal" type="number" min="0" placeholder="kcal" inputmode="numeric">
+      <input class="input input-mono" id="inProt" type="number" min="0" placeholder="prot g" inputmode="numeric">
+      <input class="input input-mono" id="inCarb" type="number" min="0" placeholder="carbs g" inputmode="numeric">
+      <input class="input input-mono" id="inFat" type="number" min="0" placeholder="grasa g" inputmode="numeric">
+      <button class="btn-primary" id="saveMacros">Guardar</button>
+    </div>
+  </div>
+
+  <!-- ====== Adherencia ====== -->
+  <div class="section-title">Adherencia</div>
+  <div class="card">
+    <div class="adh-flex">
+      <div class="adh-ring" id="adhRing"></div>
+      <div style="flex:1;min-width:200px">
+        <div class="card-eyebrow">Últimos 7 días</div>
+        <div class="card-sub" id="adhDetail" style="margin-top:2px">—</div>
+        <div class="card-sub">Un día cuenta si quedas a ±10% de kcal y ≥90% de proteína.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== Peso corporal ====== -->
+  <div class="section-title">Peso corporal</div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+      <div>
+        <div class="card-eyebrow">Media semanal</div>
+        <div class="big-num" id="weightAvg">— <span class="unit">kg</span></div>
+        <div id="weightDelta" style="margin-top:4px"></div>
+      </div>
+      <div class="form-row" style="margin:0;padding:0;border:0">
+        <input class="input input-mono" id="inWeight" type="number" min="0" step="0.1" placeholder="peso hoy (kg)" inputmode="decimal" style="max-width:150px">
+        <button class="btn-primary" id="saveWeight">Guardar</button>
+      </div>
+    </div>
+
+    <div class="chart-wrap" id="weightChart" style="margin-top:14px"></div>
+
+    <div class="goal-row" id="goalRow">
+      <button class="btn-ghost" data-g="cut">Definición</button>
+      <button class="btn-ghost" data-g="maintain">Mantener</button>
+      <button class="btn-ghost" data-g="bulk">Volumen</button>
+    </div>
+    <div class="trend-msg" id="trendMsg">Registra tu peso unos días para ver la tendencia.</div>
+  </div>
+
+  <!-- ====== Objetivos ====== -->
+  <div class="section-title">Objetivos diarios</div>
+  <div class="card">
+    <div class="targets-grid">
+      <div><label>kcal</label><input class="input input-mono" id="tKcal" type="number" min="0" inputmode="numeric"></div>
+      <div><label>prot g</label><input class="input input-mono" id="tProt" type="number" min="0" inputmode="numeric"></div>
+      <div><label>carbs g</label><input class="input input-mono" id="tCarb" type="number" min="0" inputmode="numeric"></div>
+      <div><label>grasa g</label><input class="input input-mono" id="tFat" type="number" min="0" inputmode="numeric"></div>
+      <button class="btn-ghost" id="saveTargets">Guardar objetivos</button>
+    </div>
+  </div>
+
+  <div class="attribution">Locked In · Nutrition</div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  const L = window.LIM;
+  const $ = (id) => document.getElementById(id);
+
+  const MACROS = [
+    { id: 'calories', name: 'Calorías', unit: 'kcal', color: '#E07658', t: 'kcal' },
+    { id: 'protein',  name: 'Proteína', unit: 'g',    color: '#6BE3A4', t: 'prot' },
+    { id: 'carbs',    name: 'Carbs',    unit: 'g',    color: '#7DD3FC', t: 'carb' },
+    { id: 'fat',      name: 'Grasa',    unit: 'g',    color: '#F2C063', t: 'fat' },
+  ];
+  const DEFAULT_TARGETS = { calories: 2400, protein: 180, carbs: 250, fat: 70 };
+
+  function targets() { return Object.assign({}, DEFAULT_TARGETS, L.storeGet('lim_nut_targets', {}) || {}); }
+  function goal() { return L.storeGet('lim_nut_goal', 'maintain') || 'maintain'; }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    $('todayLabel').textContent = 'Hoy — ' + L.fmtLong(L.activeDateKey());
+
+    $('saveMacros').addEventListener('click', saveMacros);
+    $('saveWeight').addEventListener('click', saveWeight);
+    $('inWeight').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveWeight(); });
+    $('saveTargets').addEventListener('click', saveTargets);
+    $('goalRow').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      L.storeSet('lim_nut_goal', b.dataset.g);
+      render();
+    });
+
+    // precarga objetivos
+    const t = targets();
+    $('tKcal').value = t.calories; $('tProt').value = t.protein;
+    $('tCarb').value = t.carbs; $('tFat').value = t.fat;
+
+    render();
+    window.addEventListener('resize', render);
+  });
+
+  function saveMacros() {
+    const vals = { calories: $('inKcal').value, protein: $('inProt').value, carbs: $('inCarb').value, fat: $('inFat').value };
+    let any = false;
+    for (const k in vals) {
+      const v = parseFloat(vals[k]);
+      if (!isNaN(v) && v >= 0 && vals[k] !== '') { L.metricLog('nut', k, v); any = true; }
+    }
+    if (any) { $('inKcal').value = $('inProt').value = $('inCarb').value = $('inFat').value = ''; render(); }
+  }
+
+  function saveWeight() {
+    const v = parseFloat($('inWeight').value);
+    if (isNaN(v) || v <= 0) return;
+    L.metricLog('nut', 'weight', v);
+    $('inWeight').value = '';
+    render();
+  }
+
+  function saveTargets() {
+    L.storeSet('lim_nut_targets', {
+      calories: parseInt($('tKcal').value, 10) || DEFAULT_TARGETS.calories,
+      protein: parseInt($('tProt').value, 10) || DEFAULT_TARGETS.protein,
+      carbs: parseInt($('tCarb').value, 10) || DEFAULT_TARGETS.carbs,
+      fat: parseInt($('tFat').value, 10) || DEFAULT_TARGETS.fat,
+    });
+    render();
+  }
+
+  function weekAvg(series, offsetWeeks) {
+    // media de 7 días: offsetWeeks=0 → última semana, 1 → anterior
+    const s = series.slice(series.length - 7 * (offsetWeeks + 1), series.length - 7 * offsetWeeks);
+    return L.metricAvg(s);
+  }
+
+  function render() {
+    const t = targets();
+
+    // macros de hoy
+    $('macroGrid').innerHTML = MACROS.map((m) => {
+      const v = Number(L.metricGet('nut', m.id) || 0);
+      const target = t[m.id];
+      const pct = target ? Math.min(1, v / target) : 0;
+      return `<div class="macro-tile">
+        <div class="macro-head">
+          <span class="macro-name">${m.name}</span>
+          <span class="macro-val">${v ? Math.round(v) : '—'}<span class="t"> / ${target} ${m.unit}</span></span>
+        </div>
+        <div class="macro-track"><div class="macro-fill" style="width:${(pct * 100).toFixed(0)}%;background:${m.color};box-shadow:0 0 8px ${m.color}55"></div></div>
+      </div>`;
+    }).join('');
+
+    // adherencia 7 días
+    const kcalS = L.metricSeries('nut', 'calories', 7);
+    const protS = L.metricSeries('nut', 'protein', 7);
+    let logged = 0, hit = 0;
+    kcalS.forEach((p, i) => {
+      if (p.value == null && protS[i].value == null) return;
+      logged++;
+      const kcalOk = p.value != null && Math.abs(p.value - t.calories) / t.calories <= 0.10;
+      const protOk = protS[i].value != null && protS[i].value >= t.protein * 0.9;
+      if (kcalOk && protOk) hit++;
+    });
+    const adh = logged ? Math.round((hit / logged) * 100) : null;
+    const color = adh == null ? '#76746E' : L.scaleColor(adh);
+    $('adhRing').innerHTML = L.ringSVG(adh, 100, { size: 120, color }) +
+      `<div class="center"><div class="p">${adh == null ? '—' : adh + '%'}</div><div class="l">adherencia</div></div>`;
+    $('adhDetail').textContent = logged
+      ? `${hit} de ${logged} días registrados dentro de objetivo`
+      : 'Aún no hay días registrados esta semana.';
+
+    // peso
+    const wSeries = L.metricSeries('nut', 'weight', 90);
+    const wAvg = weekAvg(wSeries, 0);
+    const wPrev = weekAvg(wSeries, 1);
+    $('weightAvg').innerHTML = (wAvg == null ? '—' : wAvg.toFixed(1)) + ' <span class="unit">kg · media 7d</span>';
+    $('weightDelta').innerHTML = L.deltaHTML(wAvg, wPrev, { goodWhenUp: goal() === 'bulk' });
+    L.areaChart($('weightChart'), L.metricSeries('nut', 'weight', 30), { color: '#7DD3FC', height: 150 });
+
+    // botones de objetivo
+    document.querySelectorAll('#goalRow button').forEach((b) =>
+      b.classList.toggle('is-active', b.dataset.g === goal()));
+
+    // mensaje de tendencia
+    const msg = $('trendMsg');
+    msg.className = 'trend-msg';
+    if (wAvg == null || wPrev == null) {
+      msg.textContent = 'Registra tu peso varios días (2 semanas) para ver la tendencia.';
+    } else {
+      const rate = ((wAvg - wPrev) / wPrev) * 100; // %/semana
+      const r = rate.toFixed(2).replace('-0.00', '0.00');
+      const g = goal();
+      if (g === 'bulk') {
+        if (rate < 0.1) { msg.classList.add('warn'); msg.textContent = `▲ Subiendo ${r}%/sem — demasiado lento para volumen. Sube calorías un poco.`; }
+        else if (rate > 0.5) { msg.classList.add('bad'); msg.textContent = `▲ Subiendo ${r}%/sem — demasiado rápido, estarás ganando grasa de más. Baja un poco las kcal.`; }
+        else { msg.classList.add('ok'); msg.textContent = `▲ Subiendo ${r}%/sem — ritmo ideal de volumen (0.1–0.5%).`; }
+      } else if (g === 'cut') {
+        if (rate > -0.3) { msg.classList.add('warn'); msg.textContent = `Bajando ${r}%/sem — demasiado lento para definición. Ajusta el déficit.`; }
+        else if (rate < -1.0) { msg.classList.add('bad'); msg.textContent = `▼ Bajando ${r}%/sem — demasiado rápido, riesgo de perder músculo. Sube un poco las kcal.`; }
+        else { msg.classList.add('ok'); msg.textContent = `▼ Bajando ${r}%/sem — ritmo ideal de definición (0.3–1%).`; }
+      } else {
+        if (Math.abs(rate) <= 0.25) { msg.classList.add('ok'); msg.textContent = `Peso estable (${r}%/sem) — mantenimiento perfecto.`; }
+        else { msg.classList.add('warn'); msg.textContent = `${rate > 0 ? '▲ Subiendo' : '▼ Bajando'} ${r}%/sem — se está moviendo más de lo esperado para mantenimiento.`; }
+      }
+    }
+  }
+})();
+</script>
+</body>
+</html>

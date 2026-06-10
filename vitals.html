@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<meta name="color-scheme" content="dark">
+<title>Locked In — Vitals</title>
+<script src="topbar.js" defer></script>
+<link rel="stylesheet" href="theme.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="sync.js" defer></script>
+<script src="ui.js"></script>
+<style>
+.checkin-flex { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.checkin-ring { position: relative; width: 132px; height: 132px; flex-shrink: 0; margin: 0 auto; }
+.checkin-ring .center {
+  position: absolute; inset: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.checkin-ring .center .p { font-size: 30px; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
+.checkin-ring .center .l { font-family: var(--font-mono); font-size: 8.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-tertiary); margin-top: 2px; }
+.checkin-sliders { flex: 1; min-width: 240px; }
+.v-input-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-soft); }
+.v-input-cell label {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-tertiary);
+  display: block; margin-bottom: 4px;
+}
+.v-save-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.v-status { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+.metric-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<main>
+  <h1 class="dash-title">Vitals</h1>
+
+  <!-- ====== Check-in ====== -->
+  <div class="section-title">Check-in del día</div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+      <div>
+        <div class="card-eyebrow" id="todayLabel">Hoy</div>
+        <div class="card-title">¿Cómo estás ahora?</div>
+      </div>
+    </div>
+    <div class="checkin-flex">
+      <div class="checkin-ring" id="energyRing"></div>
+      <div class="checkin-sliders">
+        <div class="slider-field">
+          <div class="slider-head">
+            <span class="slider-label">Energía</span>
+            <span><span class="slider-desc" id="energyDesc">—</span><span class="slider-val" id="energyVal">60</span></span>
+          </div>
+          <input type="range" class="scale" id="energySlider" min="0" max="100" step="5" value="60">
+        </div>
+        <div class="slider-field">
+          <div class="slider-head">
+            <span class="slider-label">Ánimo</span>
+            <span><span class="slider-desc" id="moodDesc">—</span><span class="slider-val" id="moodVal">60</span></span>
+          </div>
+          <input type="range" class="scale" id="moodSlider" min="0" max="100" step="5" value="60">
+        </div>
+        <button class="btn-primary" id="checkinSave" style="width:100%">Guardar check-in</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== Registro de métricas ====== -->
+  <div class="section-title">Métricas de hoy</div>
+  <div class="card">
+    <div class="card-eyebrow">Registra lo que tengas</div>
+    <div class="card-title" style="font-size:18px">Sueño · HRV · recuperación · FC · pasos · cafeína</div>
+    <div class="v-input-grid">
+      <div class="v-input-cell"><label>Sueño (h)</label><input class="input input-mono" id="inSleep" type="number" min="0" max="16" step="0.5" inputmode="decimal" placeholder="7.5"></div>
+      <div class="v-input-cell"><label>HRV (ms)</label><input class="input input-mono" id="inHrv" type="number" min="0" inputmode="numeric" placeholder="65"></div>
+      <div class="v-input-cell"><label>Recuperación (%)</label><input class="input input-mono" id="inRec" type="number" min="0" max="100" inputmode="numeric" placeholder="80"></div>
+      <div class="v-input-cell"><label>FC reposo (bpm)</label><input class="input input-mono" id="inRhr" type="number" min="0" inputmode="numeric" placeholder="55"></div>
+      <div class="v-input-cell"><label>Pasos</label><input class="input input-mono" id="inSteps" type="number" min="0" step="100" inputmode="numeric" placeholder="9000"></div>
+      <div class="v-input-cell"><label>Cafeína (mg)</label><input class="input input-mono" id="inCaf" type="number" min="0" step="10" inputmode="numeric" placeholder="160"></div>
+    </div>
+    <div class="v-save-row">
+      <button class="btn-primary" id="vSave">Guardar métricas</button>
+      <span class="v-status" id="vStatus"></span>
+    </div>
+  </div>
+
+  <!-- ====== Medias semanales ====== -->
+  <div class="section-title">Media · últimos 7 días</div>
+  <div class="card">
+    <div class="stat-grid" id="weekGrid"></div>
+  </div>
+
+  <!-- ====== Tendencia ====== -->
+  <div class="section-title">Tendencia</div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+      <div class="metric-pills" id="metricPills"></div>
+      <div class="seg" id="rangeSeg">
+        <button data-d="7" class="is-active">7D</button>
+        <button data-d="30">30D</button>
+        <button data-d="90">90D</button>
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <div class="card-eyebrow" id="trendName">—</div>
+      <div class="big-num" id="trendAvg">—</div>
+      <div id="trendDelta" style="margin-top:4px"></div>
+    </div>
+    <div class="chart-wrap" id="trendChart" style="margin-top:12px"></div>
+  </div>
+
+  <div class="attribution">Locked In · Vitals</div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  const L = window.LIM;
+  const $ = (id) => document.getElementById(id);
+
+  const METRICS = [
+    { id: 'sleep',    name: 'Sueño',        unit: 'h',   color: '#B5A1F2', dec: 1, goodWhenUp: true,  input: 'inSleep' },
+    { id: 'hrv',      name: 'HRV',          unit: 'ms',  color: '#7DD3FC', dec: 0, goodWhenUp: true,  input: 'inHrv' },
+    { id: 'recovery', name: 'Recuperación', unit: '%',   color: '#6BE3A4', dec: 0, goodWhenUp: true,  input: 'inRec' },
+    { id: 'rhr',      name: 'FC reposo',    unit: 'bpm', color: '#FF6B6B', dec: 0, goodWhenUp: false, input: 'inRhr' },
+    { id: 'steps',    name: 'Pasos',        unit: '',    color: '#E07658', dec: 0, goodWhenUp: true,  input: 'inSteps' },
+    { id: 'caffeine', name: 'Cafeína',      unit: 'mg',  color: '#F2C063', dec: 0, goodWhenUp: false, input: 'inCaf' },
+    { id: 'energy',   name: 'Energía',      unit: '',    color: '#E07658', dec: 0, goodWhenUp: true },
+    { id: 'mood',     name: 'Ánimo',        unit: '',    color: '#F2C063', dec: 0, goodWhenUp: true },
+  ];
+  let active = 'sleep';
+  let range = 7;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    $('todayLabel').textContent = 'Hoy — ' + L.fmtLong(L.activeDateKey());
+
+    // check-in: precarga lo de hoy
+    const e0 = L.metricGet('vitals', 'energy');
+    const m0 = L.metricGet('vitals', 'mood');
+    if (e0 != null) $('energySlider').value = e0;
+    if (m0 != null) $('moodSlider').value = m0;
+    $('energySlider').addEventListener('input', syncSliders);
+    $('moodSlider').addEventListener('input', syncSliders);
+    $('checkinSave').addEventListener('click', () => {
+      L.metricLog('vitals', 'energy', parseInt($('energySlider').value, 10));
+      L.metricLog('vitals', 'mood', parseInt($('moodSlider').value, 10));
+      flash('checkinSave', 'Guardado ✓');
+      render();
+    });
+    syncSliders();
+
+    // métricas numéricas
+    $('vSave').addEventListener('click', saveMetrics);
+
+    // pills + rango
+    $('metricPills').innerHTML = METRICS.map((m) =>
+      `<button class="btn-ghost" data-m="${m.id}">${m.name}</button>`).join('');
+    $('metricPills').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      active = b.dataset.m; render();
+    });
+    $('rangeSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      range = parseInt(b.dataset.d, 10);
+      document.querySelectorAll('#rangeSeg button').forEach((x) => x.classList.toggle('is-active', x === b));
+      render();
+    });
+
+    render();
+    window.addEventListener('resize', render);
+  });
+
+  function syncSliders() {
+    const e = parseInt($('energySlider').value, 10);
+    const m = parseInt($('moodSlider').value, 10);
+    $('energyVal').textContent = e;
+    $('energyVal').style.color = L.scaleColor(e);
+    $('energyDesc').textContent = L.scaleLabel(e);
+    $('energyDesc').style.color = L.scaleColor(e);
+    $('moodVal').textContent = m;
+    $('moodVal').style.color = L.scaleColor(m);
+    $('moodDesc').textContent = L.scaleLabel(m);
+    $('moodDesc').style.color = L.scaleColor(m);
+    $('energyRing').innerHTML = L.ringSVG(e, 100, { size: 132, color: L.scaleColor(e) }) +
+      `<div class="center"><div class="p">${e}</div><div class="l">Energía</div></div>`;
+  }
+
+  function flash(btnId, text) {
+    const st = $('vStatus');
+    st.textContent = text;
+    setTimeout(() => { st.textContent = ''; }, 2200);
+  }
+
+  function saveMetrics() {
+    let any = false;
+    METRICS.forEach((m) => {
+      if (!m.input) return;
+      const el = $(m.input);
+      const v = parseFloat(el.value);
+      if (!isNaN(v) && el.value !== '') { L.metricLog('vitals', m.id, v); el.value = ''; any = true; }
+    });
+    if (any) { flash('vSave', 'Guardado ✓'); render(); }
+    else flash('vSave', 'Escribe al menos un valor.');
+  }
+
+  function fmtVal(v, m) {
+    if (v == null) return '—';
+    const n = m.dec ? v.toFixed(m.dec) : Math.round(v);
+    return m.id === 'steps' ? Number(n).toLocaleString('es') : n;
+  }
+
+  function render() {
+    document.querySelectorAll('#metricPills button').forEach((b) =>
+      b.classList.toggle('is-active', b.dataset.m === active));
+
+    // medias semanales
+    $('weekGrid').innerHTML = METRICS.map((m) => {
+      const cur = L.metricAvg(L.metricSeries('vitals', m.id, 7));
+      const prev = L.metricAvg(L.metricSeries('vitals', m.id, 14).slice(0, 7));
+      return `<div class="stat-tile">
+        <div class="stat-tile-label"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${m.color}"></span>${m.name}</div>
+        <div class="stat-tile-value">${fmtVal(cur, m)}<span class="unit"> ${m.unit}</span></div>
+        <div class="stat-tile-sub">${L.deltaHTML(cur, prev, { goodWhenUp: m.goodWhenUp })}</div>
+      </div>`;
+    }).join('');
+
+    // tendencia
+    const m = METRICS.find((x) => x.id === active);
+    const series = L.metricSeries('vitals', active, range);
+    const prev = L.metricSeries('vitals', active, range * 2).slice(0, range);
+    const avg = L.metricAvg(series);
+    $('trendName').textContent = m.name + ' · últimos ' + range + ' días';
+    $('trendAvg').innerHTML = fmtVal(avg, m) + ' <span class="unit">' + (m.unit || '') + ' de media</span>';
+    $('trendDelta').innerHTML = L.deltaHTML(avg, L.metricAvg(prev), { goodWhenUp: m.goodWhenUp });
+    L.areaChart($('trendChart'), series, { color: m.color, height: 150 });
+  }
+})();
+</script>
+</body>
+</html>

@@ -146,6 +146,39 @@
     setTimeout(() => sessionStorage.removeItem('__sync_reloading'), 1500);
   });
 
+  /* ----------------------------------------------------------
+     Bandeja de entrada de dispositivos (Zepp → Apple Health →
+     Atajo iOS → tabla device_metrics). Vuelca las filas en
+     lim_vitals_v1 y las consume. Ver ZEPP_SYNC.md.
+     ---------------------------------------------------------- */
+  async function importDeviceMetrics() {
+    if (!session) return false;
+    try {
+      const { data, error } = await supa.from('device_metrics').select('date,type,value');
+      if (error || !data || !data.length) return false;
+
+      const MAP = { resting_hr: 'rhr', sleep_hours: 'sleep' }; // alias admitidos
+      let doc = {};
+      try { doc = JSON.parse(localStorage.getItem('lim_vitals_v1')) || {}; } catch (e) {}
+      let changed = false;
+      for (const row of data) {
+        if (!row || !row.date || !row.type || row.value == null) continue;
+        const t = MAP[row.type] || row.type;
+        const v = Math.round(Number(row.value) * 100) / 100;
+        if (!isFinite(v)) continue;
+        if (!doc[t]) doc[t] = {};
+        if (doc[t][row.date] !== v) { doc[t][row.date] = v; changed = true; }
+      }
+      if (changed) localStorage.setItem('lim_vitals_v1', JSON.stringify(doc)); // dispara push
+      // consume la bandeja (RLS limita el borrado a tus propias filas)
+      await supa.from('device_metrics').delete().neq('type', '');
+      return changed;
+    } catch (e) {
+      console.warn('[sync] import device_metrics falló', e);
+      return false;
+    }
+  }
+
   function subscribe() {
     supa
       .channel('app_state_' + session.user.id)
@@ -358,8 +391,9 @@
     hideGate();
     addLogout();
     const changed = await pull();
+    const imported = await importDeviceMetrics();
     subscribe();
-    if (changed) softReload();
+    if (changed || imported) softReload();
   }
 
   async function boot() {

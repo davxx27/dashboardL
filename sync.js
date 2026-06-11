@@ -47,8 +47,12 @@
   const origSet = localStorage.setItem.bind(localStorage);
   const origRemove = localStorage.removeItem.bind(localStorage);
 
+  // Última "foto" sincronizada con la nube: permite saber qué lado cambió
+  // (local, nube o ambos) y fusionar sin recargas innecesarias.
+  const LAST_KEY = '__sync_last_snapshot';
+
   function shouldSync(k) {
-    if (!k || k === META_KEY) return false;
+    if (!k || k === META_KEY || k === LAST_KEY) return false;
     for (const p of DENY_PREFIXES) if (k.indexOf(p) === 0) return false;
     return true;
   }
@@ -69,6 +73,37 @@
       if (shouldSync(k)) store[k] = localStorage.getItem(k);
     }
     return store;
+  }
+
+  /** Serialización canónica (claves ordenadas) — el orden NO cuenta como cambio. */
+  function canonical(store) {
+    const out = {};
+    for (const k of Object.keys(store).sort()) out[k] = store[k];
+    return JSON.stringify(out);
+  }
+  function lastSnapshot() {
+    try { return JSON.parse(localStorage.getItem(LAST_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function saveSnapshot(store) {
+    try { origSet(LAST_KEY, JSON.stringify(store)); } catch (e) {}
+  }
+
+  /**
+   * Fusión de 3 vías: parte de la nube y conserva los cambios locales hechos
+   * desde el último sync (en conflicto gana lo local — un solo usuario).
+   */
+  function mergeWithLocal(remote) {
+    const local = collect();
+    const last = lastSnapshot();
+    const merged = Object.assign({}, remote);
+    for (const k of Object.keys(local)) {
+      if (local[k] !== last[k]) merged[k] = local[k];
+    }
+    // claves borradas localmente desde el último sync
+    for (const k of Object.keys(last)) {
+      if (!(k in local) && k in merged && merged[k] === last[k]) delete merged[k];
+    }
+    return merged;
   }
 
   function applyRemote(store) {
@@ -94,7 +129,8 @@
 
   async function push() {
     if (!session) return;
-    const payload = { _client: clientId, store: collect() };
+    const store = collect();
+    const payload = { _client: clientId, store };
     try {
       await supa.from('app_state').upsert(
         {
@@ -105,6 +141,7 @@
         },
         { onConflict: 'user_id,key' }
       );
+      saveSnapshot(store);
     } catch (e) {
       console.warn('[sync] push falló', e);
     }
@@ -121,16 +158,20 @@
         .maybeSingle();
       if (error) throw error;
 
-      if (data && data.data && data.data.store) {
-        const remoteJson = JSON.stringify(data.data.store);
-        const localJson = JSON.stringify(collect());
-        if (remoteJson !== localJson) {
-          applyRemote(data.data.store);
-          return true; // hubo cambios → la página necesita re-render
-        }
-      } else {
+      const remote = data && data.data && data.data.store;
+      if (!remote) {
         await push(); // primera vez: sube lo local como semilla
+        return false;
       }
+
+      const merged = mergeWithLocal(remote);
+      const mergedJson = canonical(merged);
+      const changed = mergedJson !== canonical(collect()); // ¿cambia algo AQUÍ?
+      if (changed) applyRemote(merged);
+      saveSnapshot(merged);
+      // si la fusión conserva cambios locales que la nube no tiene, súbelos
+      if (mergedJson !== canonical(remote)) await push();
+      return changed;
     } catch (e) {
       console.warn('[sync] pull falló', e);
     }
@@ -179,7 +220,10 @@
     }
   }
 
+  let subscribed = false;
   function subscribe() {
+    if (subscribed) return; // evita canales duplicados (boot + evento de auth)
+    subscribed = true;
     supa
       .channel('app_state_' + session.user.id)
       .on(
@@ -190,8 +234,14 @@
           if (!row || row.key !== ROW_KEY || !row.data) return;
           if (row.data._client === clientId) return; // nuestro propio cambio
           if (row.data.store) {
-            applyRemote(row.data.store);
-            softReload();
+            const merged = mergeWithLocal(row.data.store);
+            const changed = canonical(merged) !== canonical(collect());
+            saveSnapshot(merged);
+            // solo recarga si de verdad cambió algo en este dispositivo
+            if (changed) {
+              applyRemote(merged);
+              softReload();
+            }
           }
         }
       )
@@ -413,6 +463,20 @@
     session = s;
     if (s) afterAuth();
   });
+
+  // Si navegas o cierras con un push pendiente (debounce 800ms), súbelo ya:
+  // evita que la siguiente página vea la nube "vieja" y pise tu último cambio.
+  function flushPending() {
+    if (pushTimer) {
+      clearTimeout(pushTimer);
+      pushTimer = null;
+      push();
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushPending();
+  });
+  window.addEventListener('pagehide', flushPending);
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });

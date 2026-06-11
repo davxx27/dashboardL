@@ -97,9 +97,11 @@ App **Atajos** → **+** → nómbralo `Locked In Sync`.
       - `Content-Type` = `application/json`
       - `Prefer` = `resolution=merge-duplicates`
 
-> ⚠️ Si tu iPhone está en español, asegúrate de que los números usan **punto**
-> decimal (7.5, no 7,5). Si una variable sale con coma, usa la acción
-> **Reemplazar texto** (`,` → `.`) antes del paso 9.
+> ⚠️ Decimales: usa **Redondear número** después de cada *Calcular estadística*
+> para que HRV/RHR/STEPS sean enteros. Si alguna variable decimal (p. ej. el
+> sueño) sale con coma (7,5), aplica **Reemplazar texto** (`,` → `.`) **a esa
+> variable concreta** antes de insertarla — nunca al JSON completo (romperías
+> las comas del propio JSON).
 
 ### Paso D — automatizarlo
 
